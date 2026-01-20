@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GRE Master V5 | AI 增强版</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    
+    <style>
+        body { background-color: #ecfdf5; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        .perspective-1000 { perspective: 1000px; }
+        .transform-style-3d { transform-style: preserve-3d; }
+        .backface-hidden { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+        .rotate-y-180 { transform: rotateY(180deg); }
+        .card-inner { transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1); transform-style: preserve-3d; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body>
+    <div id="app" v-cloak class="max-w-md mx-auto min-h-screen bg-gray-50 shadow-2xl overflow-hidden flex flex-col relative">
+        
+        <!-- 顶部导航 -->
+        <header class="bg-emerald-700 text-white px-6 py-4 shadow-lg z-30 flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <i class="fas fa-graduation-cap text-xl"></i>
+                <h1 class="font-bold text-lg tracking-wide">GRE Master V5</h1>
+            </div>
+            <div class="flex gap-4">
+                <button @click="goHome" class="hover:text-emerald-200 transition"><i class="fas fa-home text-lg"></i></button>
+                <button @click="showSettings = true" class="hover:text-emerald-200 transition"><i class="fas fa-cog text-lg"></i></button>
+            </div>
+        </header>
+
+        <!-- ================= 仪表盘 (Dashboard) ================= -->
+        <main v-if="currentView === 'dashboard'" class="flex-1 p-6 overflow-y-auto bg-emerald-50/50">
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-emerald-100 mb-6">
+                <h2 class="text-emerald-800 font-bold text-sm uppercase tracking-wider mb-4">
+                    <i class="fas fa-chart-line mr-1"></i> 学习数据
+                </h2>
+                <div class="flex justify-between items-end">
+                    <div>
+                        <div class="text-4xl font-black text-emerald-600">{{ stats.todayCount }}</div>
+                        <div class="text-xs text-gray-400 mt-1">今日已背</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xl font-bold text-gray-700">{{ favorites.length }}</div>
+                        <div class="text-xs text-gray-400 mt-1">收藏词汇</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-3 pb-10">
+                <h3 class="font-bold text-gray-700 mb-2 px-1">选择任务</h3>
+                <!-- 收藏夹 -->
+                <div @click="startSession('favorites')" class="bg-gradient-to-r from-orange-400 to-orange-500 text-white p-4 rounded-xl shadow-md flex justify-between items-center cursor-pointer active:scale-95 transition">
+                    <div><div class="font-bold"><i class="fas fa-star mr-2"></i>重点复习</div><div class="text-xs opacity-90">共 {{ favorites.length }} 词</div></div>
+                    <i class="fas fa-chevron-right opacity-80"></i>
+                </div>
+                <!-- 内置列表 -->
+                <div v-for="(list, name) in defaultData" :key="name" @click="startSession('default', name)" class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center cursor-pointer hover:border-emerald-400 transition">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-sm">{{ name.replace('Day ', '') }}</div>
+                        <div><div class="font-bold text-gray-700">{{ name }}</div><div class="text-xs text-gray-400">{{ list.length }} 词</div></div>
+                    </div>
+                    <div v-if="progress[name]" class="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">{{ progress[name] }}/{{ list.length }}</div>
+                </div>
+                <!-- 用户上传 -->
+                <div v-for="(list, name) in customData" :key="name" @click="startSession('custom', name)" class="bg-white p-4 rounded-xl shadow-sm border border-indigo-100 flex justify-between items-center cursor-pointer hover:border-indigo-400 transition">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-sm"><i class="fas fa-file-excel"></i></div>
+                        <div class="overflow-hidden"><div class="font-bold text-gray-700 truncate w-32">{{ name }}</div><div class="text-xs text-gray-400">{{ list.length }} 词</div></div>
+                    </div>
+                    <div v-if="progress[name]" class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">{{ progress[name] }}/{{ list.length }}</div>
+                </div>
+            </div>
+        </main>
+
+        <!-- ================= 背诵模式 ================= -->
+        <main v-if="currentView === 'study'" class="flex-1 flex flex-col relative bg-white">
+            <div class="h-1.5 bg-gray-100 w-full"><div class="h-full bg-emerald-500 transition-all duration-300" :style="{ width: progressPercent + '%' }"></div></div>
+            
+            <div class="flex justify-center gap-2 py-3 border-b border-gray-100">
+                <button @click="studyMode = 'card'" :class="studyMode === 'card' ? 'bg-emerald-100 text-emerald-700' : 'text-gray-400'" class="px-4 py-1 rounded-full text-xs font-bold transition">背单词</button>
+                <button @click="studyMode = 'story'" :class="studyMode === 'story' ? 'bg-purple-100 text-purple-700' : 'text-gray-400'" class="px-4 py-1 rounded-full text-xs font-bold transition">AI 故事</button>
+            </div>
+
+            <div class="flex-1 flex flex-col justify-center items-center p-6 relative overflow-hidden">
+                <!-- 卡片模式 -->
+                <div v-if="sessionList.length > 0 && studyMode === 'card'" class="w-full max-w-sm h-[400px] relative perspective-1000" @click="toggleFlip">
+                    <div :class="['card-inner w-full h-full absolute inset-0 rounded-3xl shadow-xl border border-gray-100', flipped ? 'rotate-y-180' : '']">
+                        <!-- 正面 -->
+                        <div class="absolute inset-0 backface-hidden bg-white rounded-3xl flex flex-col items-center justify-center p-6 z-20">
+                            <!-- 序号显示 -->
+                            <div class="absolute top-6 left-6 text-4xl font-bold text-gray-100 z-0 select-none">#{{ currentIndex + 1 }}</div>
+                            
+                            <button @click.stop="toggleFavorite(currentWord)" class="absolute top-5 right-5 text-2xl transition active:scale-75 z-10">
+                                <i :class="isFavorite(currentWord) ? 'fas fa-star text-yellow-400' : 'far fa-star text-gray-300'"></i>
+                            </button>
+                            <h2 class="text-3xl font-black text-gray-800 text-center break-words px-2 leading-snug z-10">{{ currentWord.word }}</h2>
+                            <p class="absolute bottom-8 text-xs text-gray-400 animate-bounce">点击翻面</p>
+                        </div>
+                        <!-- 背面 -->
+                        <div class="absolute inset-0 backface-hidden bg-emerald-50 rounded-3xl flex flex-col items-center justify-center p-6 rotate-y-180 z-10 text-center border-2 border-emerald-400">
+                            <button @click.stop="toggleFavorite(currentWord)" class="absolute top-5 right-5 text-2xl">
+                                <i :class="isFavorite(currentWord) ? 'fas fa-star text-yellow-400' : 'far fa-star text-emerald-200'"></i>
+                            </button>
+                            <div class="w-full space-y-6">
+                                <div><p class="text-[10px] font-bold text-emerald-400 uppercase mb-1">等价词</p><p class="text-xl font-bold text-emerald-800 leading-relaxed">{{ currentWord.synonyms || '---' }}</p></div>
+                                <div class="w-8 h-1 bg-emerald-200 mx-auto rounded-full"></div>
+                                <div><p class="text-[10px] font-bold text-emerald-400 uppercase mb-1">含义</p><p class="text-lg text-gray-700 font-medium">{{ currentWord.meaning || '---' }}</p></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI 故事模式 -->
+                <div v-if="sessionList.length > 0 && studyMode === 'story'" class="w-full max-w-md h-full overflow-y-auto pb-20 px-1">
+                    <div class="bg-purple-50 p-4 rounded-xl mb-4 border border-purple-100">
+                        <h3 class="text-purple-800 font-bold text-sm mb-2"><i class="fas fa-robot mr-1"></i> 生成新故事</h3>
+                        
+                        <!-- 自定义主题输入 -->
+                        <input v-model="customTheme" placeholder="输入主题 (如: 爱情公寓, 哈利波特...)" class="w-full mb-3 px-3 py-2 text-xs border border-purple-200 rounded-lg focus:outline-none focus:border-purple-500">
+                        
+                        <div class="flex flex-wrap gap-2 mb-3">
+                            <span v-for="w in storyWords" :key="w.word" class="text-[10px] bg-white border border-purple-200 text-purple-600 px-2 py-1 rounded">{{ w.word }}</span>
+                        </div>
+                        <button @click="generateStory" :disabled="loading" class="w-full bg-purple-600 text-white py-2 rounded-lg text-sm font-bold shadow hover:bg-purple-700 transition flex justify-center items-center">
+                            <span v-if="loading"><i class="fas fa-spinner fa-spin mr-2"></i> 正在构思...</span>
+                            <span v-else>✨ 生成故事</span>
+                        </button>
+                    </div>
+
+                    <!-- 故事历史记录 -->
+                    <div v-if="storyHistory.length > 0" class="space-y-4">
+                        <div v-for="(story, idx) in storyHistory" :key="idx" class="bg-white p-5 rounded-xl border border-gray-100 shadow-sm relative">
+                            <button @click="deleteStory(idx)" class="absolute top-2 right-2 text-gray-300 hover:text-red-400"><i class="fas fa-times"></i></button>
+                            <div class="text-[10px] text-gray-400 mb-2">{{ story.date }} | 主题: {{ story.theme || '默认' }}</div>
+                            <div class="text-sm leading-7 text-gray-700 text-justify" v-html="story.content"></div>
+                        </div>
+                    </div>
+                    <div v-else class="text-center text-gray-400 text-sm mt-10">暂无历史故事</div>
+                </div>
+            </div>
+
+            <!-- 底部控制 (卡片模式) -->
+            <div v-if="studyMode === 'card'" class="px-6 pb-8 pt-2 bg-white">
+                <div class="flex gap-4">
+                    <button @click="prevWord" class="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-bold hover:bg-gray-200 transition">上一个</button>
+                    <button @click="nextWord" class="flex-1 bg-emerald-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-emerald-700 transition active:scale-95">下一个</button>
+                </div>
+            </div>
+        </main>
+
+        <!-- ================= 设置弹窗 ================= -->
+        <div v-if="showSettings" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center" @click.self="showSettings = false">
+            <div class="bg-white w-full max-w-md sm:rounded-2xl rounded-t-2xl max-h-[85vh] overflow-y-auto flex flex-col">
+                <div class="p-4 border-b flex justify-between items-center bg-gray-50">
+                    <h2 class="font-bold text-gray-800">设置</h2>
+                    <button @click="showSettings = false" class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center"><i class="fas fa-times text-gray-500"></i></button>
+                </div>
+                <div class="p-6 space-y-6">
+                    <!-- 进度管理 (新功能) -->
+                    <section>
+                        <h3 class="text-xs font-bold text-gray-400 uppercase mb-2">进度管理 (点击重置)</h3>
+                        <div class="flex flex-wrap gap-2">
+                            <div v-for="(list, name) in defaultData" :key="name" class="bg-emerald-50 border border-emerald-100 px-3 py-2 rounded-lg text-xs flex items-center gap-2">
+                                <span>{{ name }}</span>
+                                <span v-if="progress[name]" class="text-emerald-600 font-bold">{{ progress[name] }}</span>
+                                <button @click="resetProgress(name)" class="text-gray-400 hover:text-red-500 ml-1" title="重置此进度"><i class="fas fa-redo"></i></button>
+                            </div>
+                            <div v-for="(list, name) in customData" :key="name" class="bg-indigo-50 border border-indigo-100 px-3 py-2 rounded-lg text-xs flex items-center gap-2">
+                                <span>{{ name }}</span>
+                                <span v-if="progress[name]" class="text-indigo-600 font-bold">{{ progress[name] }}</span>
+                                <button @click="resetProgress(name)" class="text-gray-400 hover:text-red-500 ml-1" title="重置此进度"><i class="fas fa-redo"></i></button>
+                                <button @click="deleteCustomList(name)" class="text-gray-400 hover:text-red-600 ml-1" title="删除文件"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Excel 上传 -->
+                    <section>
+                        <h3 class="text-xs font-bold text-gray-400 uppercase mb-2">导入新词表</h3>
+                        <div class="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center relative cursor-pointer hover:bg-emerald-50 hover:border-emerald-400 transition group">
+                            <input type="file" accept=".xlsx, .xls" @change="handleFileUpload" class="absolute inset-0 opacity-0 cursor-pointer z-10"/>
+                            <i class="fas fa-cloud-upload-alt text-2xl text-gray-400 group-hover:text-emerald-500 mb-1"></i>
+                            <p class="text-sm font-bold text-gray-600">上传 Excel</p>
+                        </div>
+                    </section>
+
+                    <!-- AI 设置 -->
+                    <section>
+                        <h3 class="text-xs font-bold text-gray-400 uppercase mb-2">AI 配置</h3>
+                        <input v-model="apiConfig.url" placeholder="接口地址" class="w-full mb-2 px-3 py-2 border rounded text-sm bg-gray-50">
+                        <input v-model="apiConfig.key" type="password" placeholder="API Key (sk-...)" class="w-full mb-2 px-3 py-2 border rounded text-sm bg-gray-50">
+                        <input v-model="apiConfig.model" placeholder="模型名" class="w-full px-3 py-2 border rounded text-sm bg-gray-50">
+                    </section>
+
+                    <button @click="resetAll" class="w-full py-3 text-red-500 text-sm font-bold bg-red-50 rounded-lg">⚠️ 格式化所有数据</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, reactive, ref, computed, onMounted, watch } = Vue;
+
+        // 完整数据植入 (Day 1 - Day 5)
+        const FULL_DATA = {
+            "Day 1": [["mitigate","abate, curtail, temper, ameliorate","缓和"],["anomaly","aberration","异常"],["quiescent","abeyant, calm","不活跃的，静止的"],["unprecedented","abnormal","前所未有的"],["proliferate","abound","激增"],["synoptic","abridged","概要的"],["exonerate","absolve","免罪"],["general","abstract","笼统的"],["regular","abundant","常出现的"],["misuse","abuse","误用"],["acquiescence","accession","默许"],["hail","acclaim","称赞"],["consensus","accord","一致意见"],["caustic","acerbic","尖刻的"],["mordant","acerbic","尖刻的"],["vitriolic","acerbic, opprobrium","尖酸刻薄的"],["realize","achieve","实现"],["concede","acknowledge","承认"],["accession","acquiescence","遵守"],["flexibility","adaptability, suppleness, malleability","灵活性，适应性"],["proficient","adept","精通的"],["disciple","adherent","信徒"],["nimble","adroit, dexterous, skillful","敏捷的"],["approbation","adulation, commendation","赞同"],["antagonistic","adversarial, inimical","敌对的"],["easygoing","affable","悠闲的"],["kindred","affiliated","同类的，相似的"],["opulent","affluent","富裕的"],["exacerbate","aggravate","使恶化"],["unsettle","alarm, disconcert","使不安"],["beneficence","altruism","慈善，善行"],["benevolent","altruistic, magnanimous","仁慈的"],["wondrous","amazing","奇妙的"],["equivocal","ambiguous","模棱两可的"],["comparable","analogous","相似的"],["galvanize","animate, rouse","激励"],["aberration","anomaly","异常"],["irregularity","anomaly","异常"],["obscure","anonymous, opaque, obfuscate","费解的"],["adversarial","antagonistic","对立的"],["inimical","antagonistic, deleterious","有害的/不友好的"],["predate","antedate, precede","早于"],["archaic","antediluvian, outdated","古老的"],["foresee","anticipate","预见"],["prefigure","anticipate","预示"],["indifferent","apathy","冷漠"],["palatable","appetizing","好吃的"],["extol","applaud","赞扬"],["fitting","apposite","适合的"],["commendation","approbation","称赞"],["adulation","approbation, sycophant","谄媚"],["pilfer","appropriate","偷窃"],["antediluvian","archaic","过时的"],["laborious","arduous","勤劳的"],["taxing","arduous","费劲的"],["hubris","arrogance","傲慢自大的"],["specious","artificial, forged, spurious","虚假的"],["spurious","artificial, implausible","虚假的"],["simplicity","artlessness","简单，简朴"],["slur","aspersion","贬低"],["maintain","assert","断言"],["expansion","augmentation, burgeoning","扩张"],["favorable","auspicious","有利的"],["propitious","auspicious","吉利的"],["spartan","austere","朴素的"],["abstemious","austere, moderate","有节制的"],["reflexive","automatic","本能的"],["rapacious","avaricious","贪婪的"],["ungainly","awkward","笨拙的"],["stale","banal","陈旧的"],["raillery","banter","开玩笑"],["untenable","baseless","站不住脚的"],["indebted","beholden","感激的"],["mask","belie","掩饰"],["boon","benefit, windfall","好处"],["altruistic","benevolent","无私的"],["signify","betoken","表明"],["orientation","bias","偏见/目标"],["unimpeachable","blameless","毋庸置疑的"],["insipid","bland","枯燥乏味的"],["brandish","boast","炫耀"],["buttress","bolster","支持"],["appropriate","borrow","挪用"],["boast","brandish","吹嘘"],["economy","brevity","节约"],["splendor","brilliance","华丽"],["tolerate","brook","容许"],["pastoral","bucolic","乡村的"],["nascent","budding, unformed","刚出现的"],["insulated from","buffered against","与...隔绝"],["onerous","burdensome","繁重的"],["no-nonsense","businesslike","高效干练的"],["bolster","buttress, prop up","支持"],["circumvent","bypass, sidestep, skirt","避开"],["deliberate","calculated","故意的"],["heartless","callous","残酷的"],["solidarity","camaraderie","团结"],["mimic","camouflage, replicate","模仿"],["formulaic","canned","老套的"],["deft","canny","灵巧的"],["shrewd","canny, artful","精明的"],["arbitrary","capricious","随意的/武断的"],["whimsical","capricious","难以预测的"],["impulsive","capricious, hasty","冲动的"],["secure","capture, earn","获得"],["vigilant","careful","警惕的"],["chastise","castigate","严厉批评"],["shriek","caterwaul","尖叫"],["relinquish","cede","放弃"],["dispatch","celerity","迅速"],["disapprobation","censure","谴责"],["defend","champion","辩护"],["espouse","champion, advocate","拥护"],["allure","charm","引诱"],["castigate","chastise","严厉批评"],["stem","check","阻止"],["prudent","circumspect, provident","审慎的"],["contingent","circumstantial","取决于"],["sidestep","circumvent","回避"],["bypass","circumvent, skirt","避开"],["comity","civility","礼仪"],["covert","clandestine","秘密的"],["archetypical","classic","典型的"],["orderly","coherent","有秩序的"],["immense","colossal","巨大的"],["meld","combine","混合"],["civility","comity","礼貌"],["equivalent","commensurate","相等的"],["unremarkable","commonplace","普通的"],["analogous","comparable","类似的"],["offset","compensate","补偿"],["placidity","complacency","满足"],["tractable","compliant","温顺的"],["knotty","complicated","棘手的"],["acknowledge","concede","承认"],["plausible","conceivable","看似真实的"],["decry","condemn, reprehend","公开谴责"],["meet","condign","合适的"],["circumscribe","confine, limit","限制"],["hew to","conform to","遵守"],["square with","conform to","与...一致"],["flummox","confound","使困惑"],["perplex","confound, baffle","迷惑"],["muddle","confuse","使混乱"],["speculation","conjecture","推测"],["obtrusive","conspicuous","惹眼的"],["prominent","conspicuous, salient","显著的"],["deter","constrain","阻止"],["ponder","contemplate","深思熟虑"],["competing","contending","竞争的"],["discordance","contention","不一致"],["controversial","contentious","有争议的"],["circumstantial","contingent","依情况而定的"],["dwindle","contract","逐渐变小"],["dichotomous","contradictory","矛盾的"],["violate","contravene","违反"],["contentious","controversial","好争议的"],["riddle","conundrum, enigma, puzzle","谜"],["intricate","convoluted","错综复杂的"],["tortuous","convoluted","冗长复杂的"],["upheaval","convulsion","剧变"],["deleterious","counterproductive, detrimental","有害的"],["clandestine","covert, surreptitious","秘密的"],["enviable","coveted","令人羡慕的"],["cunning","crafty","狡猾的"],["beget","create","产生"],["disgruntle","crestfallen","使不高兴"],["disintegrate","crumble","瓦解"],["unwieldy","cumbersome","笨重的"],["perfunctory","cursory, casual","敷衍的"],["palliate","damp","减轻"],["perilous","dangerous, precarious","危险的"],["dim","darken","使变暗"],["formidable","daunting","可怕的"],["modicum","dearth","少量"],["paucity","dearth","不足"],["deterioration","decay, decline","恶化"],["prophylactic","inhibitory","预防的"],["overwhelming","irresistible","压倒性的"],["interested in","drawn to","对...感兴趣"],["flexibility","malleability","灵活性"],["elegy","requiem","挽歌"],["curtail","diminish","减少"],["sidestep","dodge","躲避"],["stringent","exacting","严格的"],["mitigate","relieve","减缓"],["complexity","intricacy","复杂"]],
+            "Day 2": [["unmistakable","decisive","毋庸置疑的"],["senescence","decrepitude","衰老"],["condemn","decry","谴责"],["calumny","defamation","诽谤"],["blemish","defect","污点/缺点"],["champion","defend, espouse","支持"],["proponent","defender","支持者"],["scarce","deficient","缺乏的"],["authoritative","definitive, cogent","权威的"],["soothe","deflate","使减少/缓和"],["disregard","defy, contempt","蔑视"],["counterproductive","deleterious","事与愿违的"],["detrimental","deleterious","有害的"],["relish","delight in","享受"],["lambaste","denounce","严厉批评"],["witless","dense","愚蠢的"],["reprehensible","deplorable","应受谴责的"],["detract","deprecate","贬低"],["mockery","derision","嘲笑"],["ridicule","derision","嘲弄"],["abandon","desert, relinquish","放弃"],["annihilate","destroy","消灭"],["discern","detect, discover","觉察"],["constrain","deter","限制"],["decay","deterioration","腐朽"],["govern","determine","决定"],["deprecatory","detracting","反对的/贬低的"],["guile","deviousness","奸诈"],["identify","diagnose","确定"],["rant","diatribe","咆哮/抨击"],["contradictory","dichotomous","矛盾的"],["timid","diffident","胆怯的"],["remiss","dilatory","懈怠的"],["sluggish","dilatory, listless","缓慢的"],["industrious","diligent","勤奋的"],["darken","dim","使变暗"],["minuscule","diminutive","极小的"],["calamity","disaster","灾难"],["detect","discern","发现"],["perceptible","discernible","可察觉的"],["perspicacious","discernible","有洞察力的"],["inconspicuous","discreet","不显眼的"],["incongruity","discrepancy","矛盾"],["isolated","discrete","分离的"],["opprobrium","disdain, vitriol","谴责/耻辱"],["contemptuous","disdainful","轻蔑的"],["dump","disgorge","倾倒"],["crestfallen","disgruntled","垂头丧气的"],["crumble","disintegrate","崩溃"],["slight","disparage, discount","轻视"],["heterogeneous","disparate, dissimilar","各种各样的"],["analytical","dispassionate","善于分析的/冷静的"],["temperate","dispassionate","适度的"],["celerity","dispatch","迅速"],["defy","disregard, flout","违抗"],["duplicity","dissemblance","欺骗"],["attenuate","dissipate, mute","减弱"],["untether","divorce","脱离"],["dogmatic","doctrinaire, rigid","教条的"],["doctrinaire","dogmatic","教条主义的"],["skepticism","doubt","怀疑"],["extinguish","douse","熄灭"],["pacific","dovish","和平的"],["spectacular","dramatic","壮观的"],["elicit","draw out","引出"],["tedious","dreary, boring","单调乏味的"],["humdrum","dull","单调的"],["disgorge","dump","吐出"],["dissemble","duplicity","掩饰/伪装"],["contract","dwindle","收缩"],["keen","eager","渴望的"],["affable","easygoing, cordial","和蔼可亲的"],["wane","ebb, decline","衰落"],["outdo","eclipse","超过"],["pecuniary","economic","金钱的"],["euphoria","ecstasy","狂喜"],["democratic","egalitarian","平等的"],["flagrant","egregious","明目张胆的"],["chic","elegant","时髦的"],["plaintive","elegiac","悲伤的"],["draw","elicit","吸引/引出"],["extirpate","eliminate","根除"],["put to rest","eliminated","消除"],["cryptic","elusive","晦涩难懂的"],["slippery","elusive","棘手的"],["evasive","elusive, equivocal","逃避的"],["totemic","emblematic","象征的"],["revision","emendation","修订"],["effusive","emotional","感情溢于言表的"],["imitate","emulate, mimic","模仿"],["captivate","enamor","迷住"],["tribute","encomium","赞词"],["polymath","encyclopedic","博学者"],["exhaustive","encyclopedic","详尽的"],["underwrite","endorse","签署/支持"],["sanction","endorse, countenance","批准/制裁"],["induce","engender","引起"],["hone","enhance","磨砺/提升"],["inferable from","entailed by","能推断出的"],["entertaining","diverting, fun","有趣的"],["supplicate","entreat, solicit","恳求"],["covet","envy","贪求"],["short-lived","ephemeral","短暂的"],["transitory","ephemeral, evanescent","短暂的"],["parity","equality","平等"],["wayward","errant, unpredictable","任性的"],["onetime","erstwhile","过去的"],["learned","erudite","博学的"],["shun","eschew","避开"],["arcane","esoteric, recondite","晦涩难懂的"],["recondite","esoteric, arcane","深奥的"],["abstruse","esoteric, arcane","难懂的"],["requisite","essential","必须的"],["indispensable","essential, crucial","不可或缺的"],["lionize","eulogize","崇拜"],["ecstasy","euphoria","狂喜"],["momentary","evanescent","短暂的"],["impartial","evenhanded, fair","公正的"],["patent","evident, manifest","明显的"],["aggravate","exacerbate","加剧"],["demanding","exacting","苛求的"],["prescriptive","exacting","规定的"],["overstate","exaggerate","夸大"],["hyperbole","exaggeration","夸张"],["valorize","exalt","赞扬"],["irascible","exasperation","易怒的"],["preternatural","exceptional","超自然的"],["intemperate","excessive","过度的"],["sole","exclusive","唯一的"],["crab","excoriate","抱怨/指责"],["indict","excoriate","控告"],["wield","exert","行使"],["encyclopedic","exhaustive","广博的"],["comprehensive","exhaustive, sweeping","全面的"],["pressing","exigent, critical","紧迫的"],["tenuous","exiguous","脆弱的/稀薄的"],["absolve","exonerate","免罪"],["burgeon","expand, flourish","迅速发展"],["oust","expel, banish","驱逐"],["banish","expel, oust","流放"],["innovative","experimental","创新的"],["attributed to","explained by","归因于"],["augment","extend, expand","增加"],["douse","extinguish","熄灭"],["eliminate","extirpate","消除"],["profligate","extravagant, prodigal","挥霍的"],["zealot","extremist","狂热者"],["forge","fabricate","伪造"],["expedite","facilitate","加速"],["schism","factiousness","分裂"],["objective","fair","客观的"],["disinterested","fair, impartial","公正的"],["eminent","famous","杰出的"],["restraint","moderation","限制/适度"]],
+            "Day 3": [["facilitate","further","促进"],["synthesis","fusion","合成"],["pointless","futile","无意义的"],["animate","galvanize, rouse","赋予生命/激励"],["loquacious","garrulous","健谈的"],["reckon","gauge","估计"],["abstract","general","抽象的/摘要"],["inclusive","generic, all-encompassing","包容的"],["seed","germ","种子/萌芽"],["obtain","glean","获得"],["cheerless","gloomy","阴郁的"],["lugubrious","gloomy","悲伤的"],["abundance","glut","大量"],["surfeit","glut, plethora","过量"],["imperceptible","gradual","难以察觉的"],["sociable","gregarious","好交际的"],["unwarranted","groundless","无根据的"],["devious","guile, indirect","狡诈的"],["acclaim","hail","称赞"],["impede","hamper","阻碍"],["impair","hamstring, undermine","损害"],["helter-skelter","haphazard","杂乱的"],["innocuous","harmless, benign","无害的"],["callous","heartless","冷酷的"],["buoy","help","支持/鼓励"],["diversity","heterogeneity","多样性"],["dissimilar","heterogeneous","不同的"],["disparate","heterogeneous, diverse","迥异的"],["pedantic","hidebound","迂腐的"],["stratified","hierarchical","分层的"],["stymie","hinder","阻碍"],["inhibit","hinder, bridle","抑制"],["snag","hitch","障碍"],["patchwork","hodgepodge","大杂烩"],["welter","hodgepodge","混乱"],["resemblance","homogeneity","相似"],["enhance","hone","增强"],["venerate","honor, respect","崇敬"],["arrogant","hubristic","傲慢的"],["exaggerate","hyperbole","夸大"],["mendacity","hypocrisy","虚伪"],["heterodox","iconoclastic","异端的"],["revolutionary","iconoclastic","革命性的"],["quixotic","idealistic","不切实际的"],["distinct","idiosyncratic","独特的"],["dismiss","ignore, neglect","忽视"],["chimera","illusion","幻想"],["quaff","imbibe","痛饮"],["emulate","imitate","模仿/超越"],["colossal","immense","巨大的"],["unbounded","immoderate, expansive","无限的"],["hamstring","impair","束缚"],["vitiate","impair","损害"],["compromise","impair, concession","妥协/危害"],["undermine","impair, subvert","破坏"],["evenhanded","impartial","公平的"],["neutrality","impartiality","中立"],["fiery","impassioned","激烈的"],["zealous","impassioned, fervent","狂热的"],["indigent","impecunious","贫穷的"],["hamper","impede","阻碍"],["indiscernible","imperceptible","难以辨别的"],["unyielding","implacable","不屈的"],["hasty","impulsive, rapid","匆忙的"],["erroneous","inaccurate","错误的"],["ominous","inauspicious","不祥的"],["innate","inborn","天生的"],["foundation","inception, bedrock","基础"],["acute","incisive, severe","敏锐的"],["all-encompassing","inclusive","包罗万象的"],["generic","inclusive","通用的"],["inexplicable","incomprehensible","无法解释的"],["discrepancy","incongruity","差异"],["immaterial","inconsequential","不重要的"],["trivial","inconsequential","琐碎的"],["mixed","inconsistent","混合的/不一致的"],["indubitable","incontrovertible","毋庸置疑的"],["beholden","indebted","欠人情的"],["unseemly","indecorous","不得体的"],["excoriate","indict, crab","严厉指责"],["impecunious","indigent","贫穷的"],["circuitous","indirect","迂回的"],["essential","indispensable","基本的"],["diligent","industrious","勤奋的"],["incomprehensible","inexplicable","费解的"],["surmise","infer","推测"],["entailed by","inferable from","随之而来的"],["provocative","inflammatory","挑衅的"],["intrinsic","inherent","内在的"],["benign","innocuous, anodyne","良性的"],["experimental","innovative","实验性的"],["unfathomable","inscrutable","高深莫测的"],["uninformative","inscrutable","缺乏信息的"],["negligible","insignificant","微不足道的"],["bland","insipid","平淡的"],["nonchalant","insouciant","漠不关心的"],["abet","instigate","教唆"],["meager","insufficient, paltry","贫乏的"],["provincial","insular","狭隘的"],["readable","intelligible","易读的"],["fungible","interchangeable","可互换的"],["interrelated","interdependent","相关的"],["compelling","interesting","引人入胜的"],["construe","interpret","解释"],["interdependent","interrelated","相互依赖的"],["scary","intimidating","可怕的"],["stubborn","intractable","固执的"],["obdurate","intransigent","顽固的"],["convoluted","intricate, tortuous","复杂的"],["spontaneous","intuitive","自发的"],["exasperation","irascibility","恼怒"],["paradoxical","ironic","矛盾的"],["extraneous","irrelevant","无关的"],["vacillation","irresolution","犹豫"],["peripatetic","itinerant","巡回的"],["impatient","keen","急躁的"],["complicated","knotty","复杂的"],["terse","laconic, curt","简短的"],["taciturn","laconic, terse","沉默寡言的"],["curt","laconic, terse","草率的"],["denounce","lambast","谴责"],["nonspecialist","layperson","非专家"],["erudite","learned","博学的"],["cede to","left to","让与"],["slumberous","lethargic","昏昏欲睡的"],["somnolent","lethargic","想睡的"],["rejection","liberation from","拒绝/解脱"],["bound","limit","限制/界限"],["confine","limit, circumscribe","限制"],["scant","limited","不足的"],["pellucid","limpid","清晰的"],["eulogize","lionize","赞扬"],["mutable","liquid","易变的"],["tilt","list","倾斜"],["perennial","long-standing","长期的"],["garrulous","loquacious","唠叨的"],["remunerative","lucrative","有利可图的"],["risible","ludicrous","可笑的"],["gloomy","lugubrious","忧郁的"],["respite","lull, relief","喘息"],["rampant","luxuriant","猖獗的"],["fraudulent","malfeasant","欺诈的"],["plastic","malleable","可塑的"],["noisome","malodorous","恶臭的"],["self-evident","manifest","不证自明的"],["peripheral","marginal","边缘的"],["fringe","marginal","边缘"],["belie","mask, contradict","掩饰/证明...错误"],["precocious","mature","早熟的"],["nonconformist","maverick","特立独行的人"],["insufficient","meager","不足的"],["paltry","meager","微不足道的"],["condign","meet","适当的"],["hypocrisy","mendacity","伪善"],["showy","meretricious","艳俗的"],["painstaking","meticulous","煞费苦心的"],["thorough","meticulous","彻底的"],["exactitude","meticulousness","精确"],["trifling","minimal","微不足道的"],["diminutive","minuscule","极小的"],["trepidation","misgiving","惊恐"],["abuse","misuse","滥用"],["abate","mitigate","减轻"],["alleviate","mitigate","缓解"],["curtail","mitigate","削减"],["inconsistent","mixed, erratic","不一致的"],["derision","mockery","嘲笑"],["rebuke","mockery","指责"],["exemplary","model","模范的"],["paradigm","model","范例"],["unostentatious","modest","朴素的"],["unassuming","modest, humble","谦逊的"],["humility","modesty","谦逊"],["temper","modulate, mitigate","调和"],["evanescent","momentary","短暂的"],["fleeting","momentary","飞逝的"],["acerbic","mordant, vitriolic","尖刻的"],["confused","muddled","困惑的"],["ambiguous","mute","模棱两可的"],["fraud","duplicity","欺诈"],["hauteur","superciliousness","傲慢"],["transmit","propagate","传播"],["guarded with","stinting with","谨慎"],["abundant","dominant","丰富的"],["difficult","enigmatic","困难的"],["sympathetic","well-disposed","同情的"],["pernicious","deleterious","有害的"],["profound","weighty","深刻的"],["unanticipated","unexpected","未预料到的"],["mar","taint","破坏"],["judicious","sensible","明智的"],["laconic","spare","简练的"],["inadequate","ineffective","不足的"],["undermine","challenge","削弱"],["craven","cowardly","懦弱的"],["evince","betray","表明"],["challenge","flout","挑战"],["uncertain","tenuous","不确定的"]],
+            "Day 4": [["budding","nascent","萌芽期的"],["endemic","native, domestic","地方性的"],["vague","nebulous","模糊的"],["forsake","neglect","抛弃"],["dexterous","nimble","灵巧的"],["adroit","nimble, dexterous","灵巧的"],["businesslike","no-nonsense","务实的"],["malodorous","noisome","恶臭的"],["maverick","nonconformist","特立独行者"],["unexceptional","nondescript","普通的"],["layperson","nonspecialist","门外汉"],["original","novel","新颖的"],["unexampled","novel","前所未有的"],["tyro","novice, neophyte","新手"],["occult","numinous, arcane","神秘的"],["intransigent","obdurate, resolute","不妥协的"],["fairness","objectivity","公平"],["anonymous","obscure","匿名的"],["opaque","obscure, inaccessible","不透明的"],["obfuscate","obscure, mystify","使模糊"],["sycophantic","obsequious","阿谀奉承的"],["fixated","obsessed","痴迷的"],["fusty","obsolete, outmoded","陈腐的"],["glean","obtain","收集"],["conspicuous","obtrusive, prominent","显眼的"],["displace","obviate","取代"],["sporadic","occasional, fitful","零星的"],["numinous","occult","神圣的/神秘的"],["universal","omnipresent, ubiquitous","普遍的"],["ubiquitous","omnipresent","无处不在的"],["burdensome","onerous","繁重的"],["erstwhile","onetime","以前的"],["inaccessible","opaque, insurmountable","难以到达的"],["timely","opportune","及时的"],["disdain","opprobrium, contempt","鄙视"],["sanguine","optimistic","乐观的"],["stability","order","稳定"],["coherent","orderly","连贯的"],["provenance","origin","起源"],["unconventional","original","非传统的"],["novel","original, unexampled","新颖的"],["generate","originate","产生"],["waver","oscillate","动摇"],["expel","oust","驱逐"],["eclipse","outdo","使黯然失色"],["overshadow","outlast, obscure","遮盖"],["obsolete","outmoded, fusty","过时的"],["belabor","overemphasize","过分强调"],["dovish","pacific","和平的"],["damp","palliate","抑制"],["cure-all","panacea","万灵药"],["remedy","panacea","治疗"],["ironic","paradoxical","讽刺的"],["counterpart","parallel","对应物"],["stingy","parsimonious","吝啬的"],["minutiae","particular","细节"],["inert","passive, dormant","惰性的"],["apathy","passivity","冷漠"],["bucolic","pastoral","田园的"],["hodgepodge","patchwork, welter","大杂烩"],["vacuous","paucity","空虚的"],["dearth","paucity, modicum","缺乏"],["economic","pecuniary","经济的"],["limpid","pellucid","清澈的"],["indigence","penury","贫困"],["faultless","perfect","完美的"],["cursory","perfunctory, casual","草率的"],["precarious","perilous","危险的"],["itinerant","peripatetic","巡回的"],["marginal","peripheral","边缘的"],["porous","permeable","多孔的"],["confound","perplex, flummox","使困惑"],["enigmatic","perplexing","神秘的"],["durability","persistence","持久"],["commonplace","pervasive, widespread","平凡的"],["conciliatory","placatory","安抚的"],["elegiac","plaintive","哀悼的"],["malleable","plastic","可塑的"],["conceivable","plausible","可想象的"],["gratify","please","使满足"],["futile","pointless","无用的"],["contemplate","ponder","沉思"],["permeable","porous","可渗透的"],["presage","portend","预示"],["didactic","preachy","说教的"],["sanctimonious","preachy, didactic","伪善的"],["impetuous","precipitate","冲动的"],["rule out","preclude","排除"],["prejudice","preconception","偏见"],["forerunner","precursor","先驱"],["precede","predate, antedate","先于"],["portend","predict, presage","预示"],["proclivity","predilection, affinity","倾向"],["anticipate","prefigure, foresee","预期"],["preconception","prejudice","先入之见"],["prophetic","prescient","预言的"],["exacting","prescriptive, rigorous","严格的"],["safeguard","preserve","保护"],["exigent","pressing","紧急的"],["exceptional","preternatural, rare","非凡的"],["preclude","prevent, rule out","阻止"],["rudimentary","primitive, sketchy","基本的"],["unblemished","pristine","无暇的"],["profess","proclaim","声称"],["predilection","proclivity","偏好"],["voracious","prodigious, insatiable","贪婪的"],["proclaim","profess","宣布"],["trenchant","profound, incisive","犀利的"],["wealth","profusion","财富"],["abound","proliferate","充满"],["verbose","prolix, long-winded","啰嗦的"],["prescient","prophetic","有预见性的"],["commensurate","proportionate","相称的"],["versatile","protean, fickle","多才多艺的"],["parochial","provincial","狭隘的"],["insular","provincial, private","孤立的/狭隘的"],["inflammatory","provocative","煽动性的"],["circumspect","prudent, chary","谨慎的"],["belligerent","pugnacious","好战的"],["truculent","pugnacious, bellicose","好斗的"],["design","purposefulness","设计/意图"],["elude","puzzle","躲避/难倒"],["imbibe","quaff","吸收/喝"],["abeyance","quiescence","中止"],["idealistic","quixotic","理想主义的"],["banter","raillery","戏谑"],["luxuriant","rampant","茂盛的"],["haphazard","random, helter-skelter","随意的"],["diatribe","rant","谩骂"],["avaricious","rapacious","贪婪的"],["reconciliation","rapprochement","和解"],["intelligible","readable","可理解的"],["verisimilitude","realism","逼真"],["pragmatic","realistic","务实的"],["repudiate","recant","拒绝/否认"],["undogmatic","receptive","非教条的"],["gauge","reckon","测量/估计"],["shrink","recoil","收缩/畏缩"],["rapprochement","reconciliation","友好"],["esoteric","recondite, arcane","深奥的"],["rehash","recycle","重讲"],["liberation","rejection","释放"],["kinfolk","relative","亲属"],["germane","relevant, apposite","密切相关的"],["vestige","relic","遗迹"],["delight","relish","快乐"],["loath","reluctant, unwilling","不情愿的"],["panacea","remedy, cure-all","万能药"],["strip away","remove","剥离"],["anathema","repellent","诅咒/厌恶的人"],["censure","reprehend","谴责"],["deplorable","reprehensible","可悲的"],["recant","repudiate","撤回"],["homogeneity","resemblance","同质性"],["tenacity","resolve, endurance","顽强"],["ring true","resonate","听起来真实"],["hallow","respect","把...视为神圣"],["deferential","respectful","恭敬的"],["lull","respite","间歇"],["relief","respite","解脱"],["skittish","restive, fractious","易受惊的"],["fractious","restive, skittish","易怒的"],["tonic","restorative","滋补的"],["rehabilitate","restore","恢复"],["recrudescent","resurgent","复发的"],["manifest","reveal, self-evident","明显的"],["emendation","revision","修订"],["renaissance","revival","复兴"],["eloquent","rhetoric","雄辩的"],["conundrum","riddle, puzzle","难题"],["pervasive","rife","普遍的"],["resonate","ring true","共鸣"],["ludicrous","risible","荒谬的"],["elemental","rudimentary","基本的"],["embryonic","rudimentary","胚胎的"],["apogee","pinnacle","顶点"],["deploy","marshal","部署"]],
+            "Day 5": [["primitive","rudimentary, ancient","原始的"],["sketchy","rudimentary, superficial","粗略的"],["visible","salient","可见的"],["preachy","sanctimonious","爱说教的"],["endorse","sanction, commend","支持"],["factious","schism","好搞派系的"],["admonish","scold","告诫"],["capture","secure","俘获"],["narcissism","self-flattery","自恋"],["decrepitude","senescence","衰老"],["unrelated","separate","无关的"],["successive","sequential","连续的"],["unerring","settled","万无一失的"],["stifle","shackle","扼杀"],["superficial","shallow","表面的"],["truncate","shorten","截短"],["artful","shrewd","狡猾的"],["canny","shrewd, deft","精明的"],["acumen","shrewdness","敏锐"],["caterwaul","shriek","尖叫"],["recoil","shrink","畏缩"],["deflect","shrug off","偏转"],["betoken","signify","预示"],["artless","simplistic","单纯的"],["disparage","slight","贬低"],["snub","slight","冷落"],["elusive","slippery, evasive","难以捉摸的"],["dilatory","sluggish, remiss","拖延的"],["aspersion","slur","诽谤"],["hitch","snag","故障"],["staid","sober","稳重的"],["gregarious","sociable","合群的"],["somber","solemn","忧郁的"],["camaraderie","solidarity","友情"],["solemn","somber","庄严的"],["lethargic","somnolent, slumberous","无精打采的"],["deflate","soothe","放气/挫败"],["sleazy","sordid","肮脏的"],["unassailable","sound, airtight","无懈可击的"],["dramatic","spectacular","戏剧性的"],["conjecture","speculation","推测"],["vigorous","spirited","精力充沛的"],["intuitive","spontaneous","直觉的"],["diffuse","spread, disperse","扩散的"],["foster","spur, adopt","培养"],["artificial","spurious","人工的"],["counterfeit","spurious","伪造的"],["flout","spurn, defy","蔑视"],["conform to","square with","符合"],["sobering","staid","使清醒的"],["banal","stale","平庸的"],["invariable","static","不变的"],["forestall","stave off, avert","预防"],["check","stem","检查/阻止"],["shackle","stifle","束缚"],["parsimonious","stingy, illiberal","吝啬的"],["hierarchical","stratified","分等级的"],["audacious","striking","大胆的"],["robust","strong, reliable","强健的"],["neutralize","stymie","抵消"],["hinder","stymie, inhibit","阻碍"],["obedience","submission","服从"],["nuance","subtlety","细微差别"],["undercut","subvert, impair","削弱"],["triumph","success","胜利"],["sequential","successive","连续的"],["yield","succumb, engender","屈服/产生"],["surly","sullen","暴躁的"],["supplant","supersede","取代"],["ancillary","supplementary","辅助的"],["plethora","surfeit, glut","过剩"],["glut","surfeit, plethora","过量"],["sullen","surly, grumpy","阴郁的"],["dubious","suspect, questionable","可疑的"],["defraud","swindle","欺骗"],["obsequious","sycophantic","奉承的"],["figurative","symbolic","比喻的"],["tantamount","synonymous","相当于"],["fusion","synthesis","融合"],["laconic","taciturn, terse","简洁的"],["impolitic","tactless","不明智的"],["synonymous","tantamount","同义的"],["dreary","tedious","沉闷的"],["modulate","temper","调节"],["dispassionate","temperate, analytical","冷静的"],["resolve","tenacity","决心"],["slanted","tendentious","有偏见的"],["exiguous","tenuous","稀少的"],["halfhearted","tepid, lukewarm","不热心的"],["meticulous","thorough, exact","一丝不苟的"],["frugal","thrifty","节俭的"],["list","tilt","倾斜"],["opportune","timely","适宜的"],["brook","tolerate","容忍"],["restorative","tonic","恢复健康的"],["emblematic","totemic","象征的"],["ephemeral","transitory","短暂的"],["understandable","transparent","可理解的"],["profound","trenchant","深奥的"],["misgiving","trepidation, qualm","担忧"],["encomium","tribute","赞词"],["inconsequential","trivial, immaterial","不重要的"],["pugnacious","truculent","好斗的"],["credulous","trusting","轻信的"],["novice","tyro","新手"],["omnipresent","ubiquitous, universal","无处不在的"],["unqualified","unalloyed","无资格的/绝对的"],["sound","unassailable, valid","健全的"],["modest","unassuming","谦虚的"],["inevitable","unavoidable","不可避免的"],["pristine","unblemished","原始的"],["unremitting","unceasing","不间断的"],["quirky","unconventional","古怪的"],["unorthodox","unconventional","非正统的"],["irrefutable","undeniable","无可辩驳的"],["asymmetrical","uneven","不对称的"],["nondescript","unexceptional","毫无特色的"],["counterintuitive","unexpected","违反直觉的"],["ignorance","unfamiliarity","无知"],["outmoded","unfashionable","过时的"],["unflagging","unfatigued","不知疲倦的"],["adverse","unfavorable","不利的"],["baseless","unfounded, untenable","无根据的"],["awkward","ungainly","尴尬的/笨拙的"],["blameless","unimpeachable","无可指责的"],["skeptical","unimpressed","怀疑的"],["inscrutable","uninformative","难以捉摸的"],["singular","unique","单一的/独特的"],["unfounded","unjustified, baseless","无理由的"],["estrange","unlinked, disaffect","使疏远"],["decisive","unmistakable","决定性的"],["composed","unperturbed","镇静的"],["capricious","unpredictable","反复无常的"],["unremunerative","unprofitable","无报酬的"],["unalloyed","unqualified","纯粹的"],["undeniable","unquestionable","无可否认的"],["unprepossessing","unremarkable","不吸引人的"],["unceasing","unremitting","不断的"],["untrammeled","unrestrained","无拘无束的"],["simpleminded","unsophisticated","头脑简单的"],["fluid","unstable","不稳定的"],["divorced","untethered","分离的"],["groundless","unwarranted","无根据的"],["cumbersome","unwieldy","笨重的"],["reluctant","unwilling, loath","不情愿的"],["implacable","unyielding, inexorable","难平息的"],["convulsion","upheaval","动乱"],["irresolution","vacillation","优柔寡断"],["nebulous","vague","朦胧的"],["exalt","valorize","赞扬"],["jejune","vapid","枯燥的"],["fluctuate","vary, vacillate","波动"],["honor","venerate","尊敬"],["reverence","veneration","崇敬"],["prolix","verbose, long-winded","啰嗦的"],["long-winded","verbose, prolix","冗长的"],["protean","versatile","多变的"],["fickle","versatile, volatile","易变的"],["relic","vestige","遗物"],["chagrin","vexation","懊恼"],["exculpate","vindicate","开脱"],["contravene","violate","违反"],["salient","visible, prominent","显著的"],["mercurial","volatile, inconstant","善变的"],["prodigious","voracious","巨大的"],["insatiable","voracious","贪得无厌的"],["decline","wane","衰退"],["ebb","wane, decline","衰退"],["errant","wayward","错误的"],["destabilize","weaken","使不稳定"],["profusion","wealth","丰富"],["prevalent","widespread","流行的"],["engaging","winning","迷人的"],["quotidian","workday","日常的"],["succumb","yield","屈服"],["engender","yield, induce","产生"],["extremist","zealot","极端分子"],["ideologue","zealot","理论家"],["indolence","sloth","懒惰"],["refractory","recalcitrant","难驾驭的"],["enthrall","captivate","迷住"],["supplemental","complementary","补充的"],["ignoble","reprehensible","卑鄙的"],["inapposite","misguided","不恰当的"],["peculiar","idiosyncratic","古怪的"]]
+        };
+
+        createApp({
+            setup() {
+                const currentView = ref('dashboard'); 
+                const studyMode = ref('card');
+                const showSettings = ref(false);
+                const defaultData = reactive({});
+                const customData = ref({});
+                const favorites = ref([]);
+                const sessionName = ref('');
+                const sessionList = ref([]);
+                const currentIndex = ref(0);
+                const flipped = ref(false);
+                const stats = reactive({ todayCount: 0, lastDate: '' });
+                const progress = reactive({});
+                const apiConfig = reactive({ url: 'https://api.openai.com/v1', key: '', model: 'gpt-3.5-turbo' });
+                const storyContent = ref('');
+                const loading = ref(false);
+                const customTheme = ref('');
+                const storyHistory = ref([]);
+
+                onMounted(() => {
+                    for (const [key, list] of Object.entries(FULL_DATA)) {
+                        defaultData[key] = list.map(i => ({ word: i[0], synonyms: i[1], meaning: i[2] }));
+                    }
+                    const load = k => JSON.parse(localStorage.getItem(k) || 'null');
+                    favorites.value = load('gre_favorites') || [];
+                    customData.value = load('gre_custom_data') || {};
+                    const savedStats = load('gre_stats') || { todayCount: 0, lastDate: '' };
+                    const savedProgress = load('gre_progress') || {};
+                    const savedApi = load('gre_api_config');
+                    storyHistory.value = load('gre_story_history') || [];
+
+                    const todayStr = new Date().toDateString();
+                    if (savedStats.lastDate !== todayStr) {
+                        stats.todayCount = 0;
+                        stats.lastDate = todayStr;
+                    } else {
+                        stats.todayCount = savedStats.todayCount;
+                    }
+                    Object.assign(progress, savedProgress);
+                    if (savedApi) Object.assign(apiConfig, savedApi);
+                });
+
+                const currentWord = computed(() => sessionList.value[currentIndex.value] || { word: 'End', synonyms: '', meaning: '' });
+                const progressPercent = computed(() => sessionList.value.length ? ((currentIndex.value + 1) / sessionList.value.length) * 100 : 0);
+                
+                const storyWords = computed(() => {
+                    const start = Math.max(0, currentIndex.value - 5);
+                    const end = Math.min(sessionList.value.length, currentIndex.value + 5);
+                    const slice = sessionList.value.slice(start, end);
+                    return slice.length ? slice : sessionList.value.slice(0, 10);
+                });
+
+                const goHome = () => currentView.value = 'dashboard';
+
+                const startSession = (type, key) => {
+                    sessionName.value = key === 'favorites' ? '⭐️ 重点复习' : key;
+                    let list = type === 'favorites' ? favorites.value : (type === 'default' ? defaultData[key] : customData.value[key]);
+                    if (!list || list.length === 0) return alert("列表为空！");
+                    sessionList.value = list;
+                    currentIndex.value = (type !== 'favorites' && progress[key]) ? progress[key] : 0;
+                    flipped.value = false;
+                    storyContent.value = '';
+                    customTheme.value = '';
+                    currentView.value = 'study';
+                };
+
+                const nextWord = () => {
+                    flipped.value = false;
+                    setTimeout(() => {
+                        stats.todayCount++;
+                        localStorage.setItem('gre_stats', JSON.stringify(stats));
+                        if (currentIndex.value < sessionList.value.length - 1) {
+                            currentIndex.value++;
+                            if (sessionName.value !== '⭐️ 重点复习') {
+                                progress[sessionName.value] = currentIndex.value;
+                                localStorage.setItem('gre_progress', JSON.stringify(progress));
+                            }
+                        } else {
+                            if(confirm("恭喜！本组单词背完了。返回主页？")) goHome();
+                            else currentIndex.value = 0;
+                        }
+                    }, 200);
+                };
+
+                const prevWord = () => { flipped.value = false; setTimeout(() => currentIndex.value > 0 && currentIndex.value--, 200); };
+                const isFavorite = (w) => favorites.value.some(f => f.word === w.word);
+                const toggleFavorite = (w) => {
+                    favorites.value = isFavorite(w) ? favorites.value.filter(f => f.word !== w.word) : [...favorites.value, w];
+                    localStorage.setItem('gre_favorites', JSON.stringify(favorites.value));
+                };
+                const toggleFlip = () => flipped.value = !flipped.value;
+
+                const handleFileUpload = (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const workbook = XLSX.read(e.target.result, { type: 'array' });
+                            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                            const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                            if (jsonData.length < 1) return alert("空文件");
+                            const cleanData = [];
+                            jsonData.forEach(row => {
+                                if (!row || row.length === 0) return;
+                                let meaning = "";
+                                let englishWords = [];
+                                row.forEach(cell => {
+                                    const str = String(cell).trim();
+                                    if (!str) return;
+                                    if (/[\u4e00-\u9fa5]/.test(str)) meaning = str;
+                                    else if(!['word','synonym','meaning','等价词','中文','单词'].some(h => str.toLowerCase().includes(h))) englishWords.push(str);
+                                });
+                                if (englishWords.length > 0 && englishWords[0].length > 1) {
+                                    cleanData.push({ word: englishWords[0], synonyms: englishWords.slice(1).join(', '), meaning: meaning || '暂无释义' });
+                                }
+                            });
+                            if (cleanData.length > 0) {
+                                const name = file.name.replace(/\.[^/.]+$/, "");
+                                customData.value[name] = cleanData;
+                                localStorage.setItem('gre_custom_data', JSON.stringify(customData.value));
+                                alert(`成功导入 "${name}"`);
+                                showSettings.value = false;
+                            } else alert("未识别有效单词");
+                        } catch (err) { alert("解析失败: " + err.message); }
+                    };
+                    reader.readAsArrayBuffer(file);
+                };
+
+                const deleteCustomList = (name) => { if(confirm(`删除 "${name}"?`)) { delete customData.value[name]; localStorage.setItem('gre_custom_data', JSON.stringify(customData.value)); }};
+                const resetProgress = (name) => { if(confirm(`重置 "${name}" 进度?`)) { progress[name] = 0; localStorage.setItem('gre_progress', JSON.stringify(progress)); currentIndex.value = 0; }};
+                const resetAll = () => { if(confirm("确定清空所有数据？")) { localStorage.clear(); location.reload(); }};
+                watch(apiConfig, (val) => localStorage.setItem('gre_api_config', JSON.stringify(val)), { deep: true });
+                
+                const generateStory = async () => {
+                    if (!apiConfig.key) return alert("请设置 API Key");
+                    loading.value = true;
+                    try {
+                        const words = storyWords.value.map(w => `${w.word}(${w.meaning})`).join(', ');
+                        let url = apiConfig.url.replace(/\/+$/, '');
+                        if (!url.endsWith('/chat/completions')) url += '/chat/completions';
+                        
+                        const prompt = `用中文写一个${customTheme.value || '生动'}的GRE助记故事（200字内），必须包含：${words}。保留英文原词。`;
+                        
+                        const res = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiConfig.key}` },
+                            body: JSON.stringify({
+                                model: apiConfig.model,
+                                messages: [{ role: "user", content: prompt }]
+                            })
+                        });
+                        const data = await res.json();
+                        if(data.error) throw new Error(data.error.message);
+                        
+                        const content = data.choices[0].message.content.replace(/\n/g, '<br>');
+                        storyContent.value = content;
+                        
+                        // Save History
+                        storyHistory.value.unshift({
+                            date: new Date().toLocaleString(),
+                            theme: customTheme.value,
+                            content: content
+                        });
+                        localStorage.setItem('gre_story_history', JSON.stringify(storyHistory.value));
+
+                    } catch (e) { alert(e.message); } 
+                    finally { loading.value = false; }
+                };
+                
+                const deleteStory = (idx) => {
+                    storyHistory.value.splice(idx, 1);
+                    localStorage.setItem('gre_story_history', JSON.stringify(storyHistory.value));
+                };
+
+                return {
+                    currentView, studyMode, showSettings, defaultData, customData, favorites,
+                    sessionName, sessionList, currentIndex, currentWord, flipped, stats, progress, progressPercent,
+                    apiConfig, storyContent, storyWords, loading, customTheme, storyHistory,
+                    goHome, startSession, nextWord, prevWord, toggleFlip: () => flipped.value = !flipped.value,
+                    isFavorite, toggleFavorite, handleFileUpload, deleteCustomList, resetProgress, resetAll,
+                    generateStory, deleteStory
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
